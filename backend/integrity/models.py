@@ -53,7 +53,7 @@ class SubmissionShingle(models.Model):
     submission = models.ForeignKey(
         Submission, on_delete=models.CASCADE, related_name="shingles"
     )
-    hash_value = models.CharField(max_length=32, db_index=True)
+    hash_value = models.CharField(max_length=32)
     phrase = models.CharField(max_length=200)
 
     class Meta:
