@@ -1,5 +1,22 @@
+import secrets
+import string
+
 from django.conf import settings
 from django.db import models
+
+
+def generate_join_code() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+class Student(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="student_profile"
+    )
+
+    def __str__(self):
+        return self.user.get_full_name() or self.user.username
 
 
 class Course(models.Model):
@@ -7,10 +24,35 @@ class Course(models.Model):
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="courses"
     )
+    join_code = models.CharField(max_length=6, unique=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.join_code:
+            code = generate_join_code()
+            while Course.objects.filter(join_code=code).exists():
+                code = generate_join_code()
+            self.join_code = code
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
+
+
+class Enrollment(models.Model):
+    student = models.ForeignKey(
+        Student, on_delete=models.CASCADE, related_name="enrollments"
+    )
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="enrollments")
+    enrolled_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["student", "course"], name="unique_enrollment")
+        ]
+
+    def __str__(self):
+        return f"{self.student} in {self.course}"
 
 
 class Assignment(models.Model):
@@ -35,12 +77,26 @@ class Submission(models.Model):
     assignment = models.ForeignKey(
         Assignment, on_delete=models.CASCADE, related_name="submissions"
     )
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name="submissions",
+        null=True,
+        blank=True,
+    )
     student_name = models.CharField(max_length=200)
     raw_text = models.TextField()
     source_type = models.CharField(
         max_length=20, choices=SOURCE_CHOICES, default=SOURCE_TYPED
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assignment", "student"], name="unique_student_submission"
+            )
+        ]
 
     def __str__(self):
         return f"{self.student_name} — {self.assignment.title}"
@@ -129,3 +185,15 @@ class TeacherFeedback(models.Model):
     def __str__(self):
         verdict = "confirmed" if self.confirmed else "dismissed"
         return f"{verdict} — {self.ai_review}"
+
+
+class Grade(models.Model):
+    submission = models.OneToOneField(
+        Submission, on_delete=models.CASCADE, related_name="grade"
+    )
+    score = models.FloatField()
+    comment = models.TextField(blank=True)
+    graded_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.score} — {self.submission}"
