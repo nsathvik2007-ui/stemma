@@ -1,5 +1,9 @@
 from django.db import connection
 
+# Drafts (submitted_at IS NULL) are excluded here as well as in
+# AssignmentViewSet.analyze — this query reaches submissions directly, so
+# filtering only in the view would still pair a draft that was shingled by
+# an earlier run.
 CANDIDATE_QUERY = """
     SELECT a.submission_id, b.submission_id, COUNT(*) AS shared
     FROM integrity_submissionshingle a
@@ -8,6 +12,7 @@ CANDIDATE_QUERY = """
     JOIN integrity_submission sa ON sa.id = a.submission_id
     JOIN integrity_submission sb ON sb.id = b.submission_id
     WHERE sa.assignment_id = %s AND sb.assignment_id = %s
+      AND sa.submitted_at IS NOT NULL AND sb.submitted_at IS NOT NULL
     GROUP BY a.submission_id, b.submission_id
     HAVING COUNT(*) >= %s
     ORDER BY shared DESC
@@ -30,7 +35,12 @@ def run_assignment_scan(assignment, min_shared_shingles: int = 2) -> list:
     from .scoring import score_pair
 
     candidates = find_candidate_pairs(assignment, min_shared_shingles)
-    submissions_by_id = {s.id: s for s in Submission.objects.filter(assignment=assignment)}
+    submissions_by_id = {
+        s.id: s
+        for s in Submission.objects.filter(
+            assignment=assignment, submitted_at__isnull=False
+        )
+    }
 
     return [
         score_pair(submissions_by_id[c["submission_a_id"]], submissions_by_id[c["submission_b_id"]])

@@ -58,7 +58,12 @@ class Enrollment(models.Model):
 class Assignment(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="assignments")
     title = models.CharField(max_length=200)
-    due_date = models.DateField(null=True, blank=True)
+    # Deadlines carry a time of day. Stored UTC, rendered in TIME_ZONE
+    # (Asia/Kolkata); clients must post an explicit offset, e.g.
+    # 2026-09-12T17:00:00+05:30, or Django reads the naive string as UTC.
+    due_at = models.DateTimeField(null=True, blank=True)
+    # The denominator behind every score. Grade.score is validated against it.
+    max_score = models.FloatField(default=20)
     similarity_threshold = models.FloatField(default=0.25)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -89,7 +94,16 @@ class Submission(models.Model):
     source_type = models.CharField(
         max_length=20, choices=SOURCE_CHOICES, default=SOURCE_TYPED
     )
+    # The photograph as handed in. Without this only the transcription
+    # survives, so a bad OCR cannot be checked against the page.
+    image = models.ImageField(upload_to="submissions/%Y/%m/", null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    # Null means draft: saved but not handed in. Drafts are excluded from
+    # every similarity scan.
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    # Stored at hand-in rather than derived on read, so moving a deadline
+    # does not silently un-late old work.
+    late = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
@@ -97,6 +111,10 @@ class Submission(models.Model):
                 fields=["assignment", "student"], name="unique_student_submission"
             )
         ]
+
+    @property
+    def is_draft(self) -> bool:
+        return self.submitted_at is None
 
     def __str__(self):
         return f"{self.student_name} — {self.assignment.title}"
@@ -168,6 +186,8 @@ class AIReview(models.Model):
     )
     verdict = models.CharField(max_length=20, choices=VERDICT_CHOICES)
     confidence = models.FloatField()
+    # Written for a teacher: it names the other student and describes the
+    # overlap. Never serialized to a student. See SubmissionViewSet.review.
     explanation = models.TextField()
     reviewed_at = models.DateTimeField(auto_now_add=True)
 
