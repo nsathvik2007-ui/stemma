@@ -1,13 +1,19 @@
+import logging
+import mimetypes
+
 from django.db.models import Count, Q
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .ai_review import recalibrate_threshold, review_pair
+from .auth import IsStudent, IsTeacher
 from .candidates import run_assignment_scan
 from .models import (
     AIReview,
@@ -31,6 +37,14 @@ from .serializers import (
 from .vision_ocr import transcribe_handwriting
 
 
+logger = logging.getLogger(__name__)
+
+# Shown to the person who uploaded. The provider's own error goes to the server
+# log only: it carries the GCP project number, billing links and quota state,
+# none of which a student should see.
+OCR_FAILED = "The photo could not be read. Nothing was submitted."
+
+
 def _student_profile_or_400(request):
     student = getattr(request.user, "student_profile", None)
     if student is None:
@@ -39,7 +53,12 @@ def _student_profile_or_400(request):
 
 
 class CourseViewSet(viewsets.ModelViewSet):
+    """Teacher-only in full. Students reach courses through /my-courses/ and
+    /courses/join/, never through this set — without IsTeacher a student could
+    POST here and be saved as the new course's teacher."""
+
     serializer_class = CourseSerializer
+    permission_classes = [IsAuthenticated, IsTeacher]
 
     def get_queryset(self):
         return Course.objects.filter(teacher=self.request.user)
@@ -63,7 +82,28 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 
 class AssignmentViewSet(viewsets.ModelViewSet):
+    """Shared set, split by action.
+
+    Both roles list and retrieve assignments (scoped below). Everything that
+    writes, scans, or returns a verdict is teacher-only; handing work in is
+    student-only. `pairs` is teacher-only because it nests AIReview.explanation,
+    which names the other student.
+    """
+
     serializer_class = AssignmentSerializer
+
+    TEACHER_ACTIONS = {
+        "create", "update", "partial_update", "destroy",
+        "analyze", "review", "pairs", "upload",
+    }
+    STUDENT_ACTIONS = {"submit", "draft"}
+
+    def get_permissions(self):
+        if self.action in self.TEACHER_ACTIONS:
+            return [IsAuthenticated(), IsTeacher()]
+        if self.action in self.STUDENT_ACTIONS:
+            return [IsAuthenticated(), IsStudent()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
@@ -164,7 +204,8 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         try:
             raw_text = transcribe_handwriting(image_file.read())
         except Exception as exc:
-            return Response({"detail": f"OCR failed: {exc}"}, status=502)
+            logger.exception("OCR failed for upload to assignment %s", assignment.id)
+            return Response({"detail": OCR_FAILED}, status=502)
         # read() left the pointer at the end; rewind before Django saves it.
         image_file.seek(0)
 
@@ -190,6 +231,21 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if not Enrollment.objects.filter(student=student, course=assignment.course).exists():
             raise PermissionDenied("You are not enrolled in this course.")
 
+        # Once the work is marked, the mark and the text must stay in step.
+        # submit is update_or_create and never touched the Grade, so replacing
+        # a graded answer used to leave the old score attached to new text.
+        existing = Submission.objects.filter(
+            assignment=assignment, student=student
+        ).first()
+        if existing is not None and hasattr(existing, "grade"):
+            return Response(
+                {
+                    "detail": "This work has already been marked, so it can no longer "
+                    "be replaced. Ask your teacher if you need to resubmit."
+                },
+                status=409,
+            )
+
         image_file = request.FILES.get("image")
         raw_text = request.data.get("raw_text")
 
@@ -197,7 +253,8 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             try:
                 raw_text = transcribe_handwriting(image_file.read())
             except Exception as exc:
-                return Response({"detail": f"OCR failed: {exc}"}, status=502)
+                logger.exception("OCR failed for upload to assignment %s", assignment.id)
+            return Response({"detail": OCR_FAILED}, status=502)
             image_file.seek(0)
             source_type = Submission.SOURCE_HANDWRITTEN
         elif raw_text:
@@ -225,7 +282,18 @@ class AssignmentViewSet(viewsets.ModelViewSet):
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
+    """Shared set. `review` stays open to both and gates by role inside the
+    action itself — a student sees a verdict only once a teacher has confirmed
+    it, and never the explanation."""
+
     serializer_class = SubmissionSerializer
+
+    TEACHER_ACTIONS = {"create", "update", "partial_update", "destroy", "grade"}
+
+    def get_permissions(self):
+        if self.action in self.TEACHER_ACTIONS:
+            return [IsAuthenticated(), IsTeacher()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
@@ -265,6 +333,27 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             defaults={"score": score, "comment": request.data.get("comment", "")},
         )
         return Response(GradeSerializer(grade).data)
+
+    @action(detail=True, methods=["get"])
+    def image(self, request, pk=None):
+        """The photograph as handed in — the only way the file leaves the server.
+
+        Photos are not served from /media/. That route has no auth, so anyone
+        with the URL could open a student's handwritten page. Going through
+        get_object() applies the same scoping as every other read: the teacher
+        who owns the course, or the student who handed it in. Anyone else gets
+        404, not 403, so the response doesn't confirm the photo exists.
+        """
+        submission = self.get_object()
+        if not submission.image:
+            raise Http404("No photo for this submission.")
+        content_type, _ = mimetypes.guess_type(submission.image.name)
+        response = FileResponse(
+            submission.image.open("rb"), content_type=content_type or "image/jpeg"
+        )
+        # Student work: never cached by shared caches or proxies.
+        response["Cache-Control"] = "private, no-store"
+        return response
 
     @action(detail=True, methods=["get"])
     def review(self, request, pk=None):
@@ -317,6 +406,7 @@ class PairViewSet(viewsets.ReadOnlyModelViewSet):
     """
 
     serializer_class = SubmissionPairSerializer
+    permission_classes = [IsAuthenticated, IsTeacher]
 
     def get_queryset(self):
         qs = (
@@ -365,6 +455,26 @@ class PairViewSet(viewsets.ReadOnlyModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["post"])
+    def review(self, request, pk=None):
+        """Send this one pair to the model, now.
+
+        The assignment-level review only takes pairs at or above the
+        assignment's threshold, so a pair the teacher opened from the queue and
+        wants a verdict on — precisely because it sits under the threshold —
+        could not be reviewed at all. This is an explicit, single, teacher-
+        initiated request, so it deliberately ignores the threshold: the
+        threshold decides what gets read *automatically*, not what a teacher is
+        allowed to ask about.
+        """
+        pair = self.get_object()
+        try:
+            review_pair(pair)
+        except Exception as exc:
+            return Response({"detail": f"Review failed: {exc}"}, status=502)
+        pair.refresh_from_db()
+        return Response(SubmissionPairSerializer(pair).data)
+
 
 class TeacherSummaryView(APIView):
     """Per-course counts for the teacher home screen, in one call.
@@ -372,6 +482,8 @@ class TeacherSummaryView(APIView):
     Assembling this client-side is one request per assignment plus the full
     submission list of every class, which does not hold at these sizes.
     """
+    permission_classes = [IsAuthenticated, IsTeacher]
+
 
     def get(self, request):
         courses = (
@@ -412,6 +524,8 @@ class TeacherSummaryView(APIView):
 
 
 class SubmitFeedbackView(APIView):
+    permission_classes = [IsAuthenticated, IsTeacher]
+
     def post(self, request, review_id):
         review = get_object_or_404(
             AIReview.objects.filter(pair__assignment__course__teacher=request.user),
@@ -430,21 +544,43 @@ class SubmitFeedbackView(APIView):
 
 
 class JoinCourseView(APIView):
+    permission_classes = [IsAuthenticated, IsStudent]
+
     def post(self, request):
         student, error = _student_profile_or_400(request)
         if error:
             return error
 
         code = request.data.get("code", "").strip().upper()
-        course = get_object_or_404(Course, join_code=code)
 
-        enrollment, created = Enrollment.objects.get_or_create(student=student, course=course)
+        # A mistyped code is a bad request, not a missing page. get_object_or_404
+        # here would return Django's generic "No Course matches the given query",
+        # which tells a student nothing they can act on.
+        if len(code) != 6:
+            return Response(
+                {"detail": "A class code is six characters. Check you have all of it."},
+                status=400,
+            )
+
+        course = Course.objects.filter(join_code=code).first()
+        if course is None:
+            return Response(
+                {
+                    "detail": "No class has that code. Check it with your teacher — "
+                    "one wrong character is enough."
+                },
+                status=400,
+            )
+
+        _, created = Enrollment.objects.get_or_create(student=student, course=course)
         return Response(
             {"course": course.id, "course_name": course.name, "already_enrolled": not created}
         )
 
 
 class MyCoursesView(APIView):
+    permission_classes = [IsAuthenticated, IsStudent]
+
     def get(self, request):
         student, error = _student_profile_or_400(request)
         if error:

@@ -2,6 +2,7 @@ import secrets
 import string
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -214,6 +215,25 @@ class Grade(models.Model):
     score = models.FloatField()
     comment = models.TextField(blank=True)
     graded_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        """Keep the score inside the assignment's scale.
+
+        The /grade/ endpoint already checks this, but the shell and the admin
+        do not go through it -- which is how a score of 88 against a max of 20
+        reached the database. Validating here closes every write path, not just
+        the API one. max_score lives on Assignment, so this cannot be a
+        database-level CheckConstraint.
+        """
+        max_score = self.submission.assignment.max_score
+        if self.score < 0 or self.score > max_score:
+            raise ValidationError(
+                {"score": f"score must be between 0 and {max_score}, got {self.score}"}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.score} — {self.submission}"

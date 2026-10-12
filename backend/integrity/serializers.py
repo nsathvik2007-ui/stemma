@@ -48,6 +48,9 @@ class GradeSerializer(serializers.ModelSerializer):
 
 class SubmissionSerializer(serializers.ModelSerializer):
     grade = serializers.SerializerMethodField()
+    # A flag, not the file's URL or path. The photo itself is only reachable
+    # through the ownership-scoped GET /api/submissions/{id}/image/.
+    has_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
@@ -58,7 +61,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "student_name",
             "raw_text",
             "source_type",
-            "image",
+            "has_image",
             "uploaded_at",
             "submitted_at",
             "late",
@@ -67,12 +70,15 @@ class SubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "student",
-            "image",
+            "has_image",
             "uploaded_at",
             "submitted_at",
             "late",
             "grade",
         ]
+
+    def get_has_image(self, obj):
+        return bool(obj.image)
 
     def get_grade(self, obj):
         if hasattr(obj, "grade"):
