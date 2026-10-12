@@ -1,0 +1,452 @@
+/* ---------------------------------------------------------------------------
+   Stemma design tokens — derived from design/DESIGN.md.
+   Dark-locked by brand: there is deliberately no light-mode block anywhere in
+   this file. See DESIGN.md §7 ("no light-mode section, ever").
+   --------------------------------------------------------------------------- */
+
+/* Mentarika is the wordmark face only, and it is NOT on Google Fonts — it must
+   be self-hosted or the wordmark silently falls back to a serif. That fallback
+   is the bug called out in design/CLAUDE.md. Still a personal-use demo:
+   a commercial licence is required before launch. */
+@font-face {
+  font-family: 'Mentarika';
+  src: url('/fonts/mentarika.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  /* --- Colour. One accent, page-wide. No second hue for status. --- */
+  --ink: #101216;
+  --ink-raised: #13151a;        /* stepped right-hand panel */
+  --vermilion: #FF5A2B;         /* primary accent, on ink */
+  --vermilion-light: #FF6B3D;   /* accent on dark glass; the mesh field hue */
+  --grey: #4A5058;              /* secondary strokes, hairlines */
+  --bone: #F7F4EE;              /* primary text */
+  --bone-66: rgba(247, 244, 238, 0.66);  /* body copy */
+  --bone-55: rgba(247, 244, 238, 0.55);  /* mono eyebrows, meta */
+  --bone-18: rgba(247, 244, 238, 0.18);  /* glass borders, hairlines */
+
+  /* Translucent surfaces. Required, not decorative: with opaque panels the
+     mesh field paints behind them and cannot be seen (design/NEXT.md). */
+  --card: rgba(22, 24, 29, 0.70);
+  --rail: rgba(19, 21, 26, 0.48);
+
+  /* --- Type --- */
+  --font-wordmark: 'Mentarika', 'Instrument Serif', Georgia, serif;
+  --font-heading: 'Familjen Grotesk', system-ui, sans-serif;
+  --font-body: 'Instrument Sans', system-ui, sans-serif;
+  --font-doc: 'Newsreader', Georgia, serif;   /* in-product document text only */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --text-wordmark-login: 78px;  /* against a 94px mark */
+  --text-wordmark-bar: 35px;    /* against a 48px mark — mark leads here */
+  --text-page: 37px;
+  --text-section: 26px;
+  --text-body: 15.5px;
+  --text-doc: 15px;
+  --text-label: 11px;
+  --text-eyebrow: 11px;
+
+  --tracking-heading: -0.015em;  /* -0.012em to -0.018em */
+  --tracking-label: 0.14em;
+  --tracking-eyebrow: 0.16em;
+
+  --leading-body: 1.6;
+  --leading-doc: 1.76;
+
+  /* --- Radius. These three values only. --- */
+  --radius-pill: 999px;
+  --radius-card: 22px;
+  --radius-input: 12px;
+
+  /* --- Glass. A badge material, for marks and states — never a container. --- */
+  --glass-border: 1px solid var(--bone-18);
+  --glass-fill: linear-gradient(
+    150deg,
+    rgba(247, 244, 238, 0.16),
+    rgba(247, 244, 238, 0.05) 48%,
+    rgba(247, 244, 238, 0.11)
+  );
+  --glass-inset:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 24px rgba(0, 0, 0, 0.20);
+  --glass-blur-badge: 18px;
+  --glass-blur-pill: 22px;
+  --glass-blur-card: 26px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  min-height: 100dvh;   /* never 100vh */
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--bone);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  letter-spacing: var(--tracking-heading);
+  margin: 0;
+}
+
+/* Glass is applied through this one class so the recipe stays in a single
+   place. Blur scale is set per use via --glass-blur. */
+.glass {
+  border: var(--glass-border);
+  background: var(--glass-fill);
+  box-shadow: var(--glass-inset);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(180%);
+}
+
+/* Solid fallback where the viewer has asked for less transparency. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: #1a1d23;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--bone-55);
+}
+
+/* Label above the input, error below it. Never placeholder-as-label. */
+.field-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--bone-55);
+}
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-input);
+  border: 1px solid var(--bone-18);
+  background: rgba(16, 18, 22, 0.6);
+  color: var(--bone);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+}
+.input:focus {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.btn {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  min-height: 44px;           /* touch target floor */
+  transition: transform 80ms ease;
+}
+.btn:active { transform: translateY(1px); }
+/* A disabled control must read as disabled, not merely refuse to respond. */
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn:disabled:active { transform: none; }
+.btn-primary { background: var(--vermilion); color: var(--ink); }  /* passes AA */
+.btn-secondary { background: transparent; color: var(--bone); border-color: var(--bone-18); }
+
+.error {
+  color: var(--vermilion);
+  font-size: 13.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- Wordmark pill. Mark and word on one glass surface. --- */
+.wordmark {
+  position: relative;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--bone-18);
+  background: linear-gradient(150deg, rgba(247,244,238,0.15), rgba(247,244,238,0.05) 48%, rgba(247,244,238,0.10));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 50px rgba(0, 0, 0, 0.20);
+}
+.wordmark-blur {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+.wordmark-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--wm-gap);
+  padding: var(--wm-pad);
+}
+.wordmark .mark {
+  width: var(--wm-mark);
+  height: var(--wm-mark);
+}
+.wordmark-text {
+  font-family: var(--font-wordmark);
+  font-size: var(--wm-text);
+  letter-spacing: 0.02em;
+  color: #FFFFFF;
+  line-height: 1;
+  white-space: nowrap;
+}
+.wordmark--login { --wm-mark: 94px; --wm-text: 78px; --wm-gap: 28px; --wm-pad: 22px 54px 22px 36px; }
+.wordmark--bar   { --wm-mark: 44px; --wm-text: 35px; --wm-gap: 14px; --wm-pad: 10px 26px 10px 16px; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .wordmark { background: #1a1d23; }
+  .wordmark-blur { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* --- Login. Built from design/artboards/Login.dc.html: a 620px ink panel
+   against the document field, card right-aligned over a radial scrim.
+   Collapses at <1024px to card-first with the steps below. --- */
+.login {
+  display: grid;
+  grid-template-columns: 620px 1fr;
+  min-height: 100dvh;
+}
+
+.login-left {
+  position: relative;
+  background: var(--ink);
+  border-right: 1px solid rgba(74, 80, 88, 0.45);
+  display: flex;
+  flex-direction: column;
+}
+/* Fixed-height band so the pill is centred on both axes by geometry rather
+   than by eye. The hairline is this band's bottom edge, which is why it spans
+   the full panel width with no padding to subtract. */
+.login-head {
+  height: 216px;
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid rgba(74, 80, 88, 0.40);
+}
+/* Left inset 92px and a 470px step column, both from the artboard; the right
+   padding is what is left over, so the text measure does not depend on a
+   max-width that can bind before the padding does. */
+.login-steps {
+  padding: 52px 57px 56px 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.login-right {
+  position: relative;
+  background: var(--ink-raised);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 56px 120px 56px 56px;
+  overflow: hidden;
+}
+
+/* Bleeds past the top and bottom edges. */
+.login-field {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30px;
+  bottom: -30px;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  padding: 40px 52px;
+  column-count: 2;
+  column-gap: 46px;
+  font-family: var(--font-doc);
+  font-size: var(--text-doc);
+  line-height: var(--leading-doc);
+  color: rgba(247, 244, 238, 0.17);
+}
+.login-vscrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(19, 21, 26, 0.72) 0%,
+    rgba(19, 21, 26, 0) 26%,
+    rgba(19, 21, 26, 0) 74%,
+    rgba(19, 21, 26, 0.72) 100%
+  );
+}
+/* Sits beneath the card so its backdrop blur picks up ink rather than
+   smearing the accent in the field behind it. */
+.login-rscrim {
+  position: absolute;
+  left: 80px;
+  right: 60px;
+  top: 100px;
+  bottom: 100px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 60px;
+  background: radial-gradient(
+    closest-side at 50% 50%,
+    rgba(19, 21, 26, 0.94) 0%,
+    rgba(19, 21, 26, 0.88) 62%,
+    rgba(19, 21, 26, 0) 100%
+  );
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 560px;
+  max-width: 100%;
+  padding: 56px 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  border-radius: 26px;
+  border: 1px solid rgba(247, 244, 238, 0.16);
+  background: linear-gradient(150deg, rgba(247,244,238,0.13), rgba(247,244,238,0.05) 46%, rgba(247,244,238,0.09));
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 60px rgba(0, 0, 0, 0.22);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .login-card { background: #1a1d23; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+.login-input {
+  height: 56px;
+  padding: 0 16px;
+  border-radius: var(--radius-input);
+  border: 1px solid rgba(247, 244, 238, 0.22);
+  background: rgba(16, 18, 22, 0.28);
+  font-family: var(--font-body);
+  font-size: 17px;
+  color: var(--bone);
+  outline: none;
+}
+.login-input:focus {
+  border-color: var(--vermilion);
+  background: rgba(247, 244, 238, 0.10);
+}
+
+/* Bone fill, ink label; vermilion is the hover, not the resting state.
+   NB this differs from DESIGN.md §4, which describes the primary button as a
+   vermilion fill. The artboard is the more recent artifact — see the note in
+   SESSION_SUMMARY.md. */
+.login-submit {
+  height: 58px;
+  border: none;
+  border-radius: var(--radius-input);
+  background: var(--bone);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 120ms ease, transform 80ms ease;
+}
+.login-submit:hover { background: var(--vermilion); }
+.login-submit:active { transform: translateY(1px); }
+.login-submit-busy {
+  background: rgba(247, 244, 238, 0.16);
+  color: rgba(247, 244, 238, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: default;
+}
+.login-submit-busy:hover { background: rgba(247, 244, 238, 0.16); }
+
+.login-error {
+  border-left: 3px solid var(--vermilion);
+  background: rgba(255, 90, 43, 0.14);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+@media (max-width: 1024px) {
+  .login { grid-template-columns: 1fr; }
+  .login-left {
+    order: 2;
+    border-right: 0;
+    border-top: 1px solid rgba(74, 80, 88, 0.45);
+    padding: 40px 32px 48px;
+  }
+  .login-head { height: auto; padding: 8px 0 32px; border-bottom: 0; }
+  .wordmark--login { --wm-mark: 66px; --wm-text: 54px; --wm-gap: 18px; --wm-pad: 16px 36px 16px 24px; }
+  .login-steps { padding: 0; max-width: 470px; }
+  .login-right {
+    order: 1;
+    justify-content: center;
+    padding: 56px 32px;
+    min-height: 78dvh;
+  }
+  .login-field { column-count: 1; }
+  .login-rscrim { left: 20px; right: 20px; }
+}
+@media (max-width: 768px) {
+  .wordmark--login { --wm-mark: 46px; --wm-text: 38px; --wm-gap: 12px; --wm-pad: 12px 24px 12px 16px; }
+  .wordmark--bar   { --wm-mark: 34px; --wm-text: 27px; --wm-gap: 10px; --wm-pad: 8px 18px 8px 12px; }
+  .login-left { padding-inline: 24px; }
+  .login-right { padding-inline: 24px; }
+  .login-card { padding: 40px 28px; }
+}
+
+/* --- App shell --- */
+.app-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--bone-18);
+}
+.page {
+  position: relative;   /* above the mesh field, which sits at z-index -1 */
+  flex: 1;
+  width: 100%;
+  padding: 40px 48px 72px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .app-bar { padding-inline: 24px; }
+  .page { padding: 28px 24px; }
+}

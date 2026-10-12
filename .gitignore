@@ -8,3 +8,8 @@ backend/media/
 .env.example
 *.json.key
 gcloud-vision-key.json
+
+# frontend
+node_modules/
+frontend/dist/
+frontend/.env
