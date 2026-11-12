@@ -1,0 +1,14 @@
+[Unit]
+Description=Stemma (Django under gunicorn)
+After=network.target mariadb.service mysql.service
+
+[Service]
+User=stemma
+Group=stemma
+WorkingDirectory=/srv/stemma/backend
+# Settings read backend/.env themselves (python-dotenv), so no EnvironmentFile.
+ExecStart=/srv/stemma/backend/venv/bin/gunicorn -c /srv/stemma/deploy/gunicorn.conf.py stemma.wsgi
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

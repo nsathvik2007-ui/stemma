@@ -14,6 +14,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -21,21 +22,39 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(
-    BASE_DIR / os.environ['GOOGLE_APPLICATION_CREDENTIALS']
-)
+
+def env_bool(name, default=False):
+    return os.environ.get(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+def env_list(name):
+    return [item.strip() for item in os.environ.get(name, '').split(',') if item.strip()]
 
-# SECURITY WARNING: keep the secret key used in production secret!
+
+# Optional. Without it the app still runs and only photo submissions fail,
+# with the plain OCR error rather than a crash at startup. A relative path is
+# taken from backend/; an absolute one is used as-is.
+if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(
+        BASE_DIR / os.environ['GOOGLE_APPLICATION_CREDENTIALS']
+    )
+
+
+# Deployment checklist: https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+
+# Off unless .env turns it on, so a server that is missing the variable fails
+# safe instead of serving debug pages.
+DEBUG = env_bool('DJANGO_DEBUG')
+
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
+if not DEBUG and SECRET_KEY.startswith('django-insecure-'):
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY is the development key. Generate a new one for this server.'
+    )
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+# Comma-separated, e.g. "stemma.example.com". With DEBUG on and this empty,
+# Django already allows localhost.
+ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS')
 
 
 # Application definition
@@ -81,12 +100,14 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# The Vite dev server. JWT travels in the Authorization header, not a cookie,
-# so no credentialed-origin or CSRF handling is needed for the API.
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
+# Cross-origin access is only needed when the frontend is served from another
+# origin -- the Vite dev server locally. In production the built app and the
+# API share one domain (deploy/Caddyfile), so the list is empty. JWT travels in
+# the Authorization header, not a cookie, so no credentialed-origin or CSRF
+# handling is needed for the API.
+CORS_ALLOWED_ORIGINS = env_list('DJANGO_CORS_ORIGINS') or (
+    ['http://localhost:5173', 'http://127.0.0.1:5173'] if DEBUG else []
+)
 
 ROOT_URLCONF = 'stemma.urls'
 
@@ -161,9 +182,48 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# `manage.py collectstatic` gathers the admin's CSS/JS here for Caddy to serve.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Student photos. Never served directly -- only through the ownership-scoped
+# /api/submissions/{id}/image/ endpoint. On a server, keep this outside the
+# code checkout so a redeploy cannot touch it, and include it in backups.
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
+
+
+# Production only. Caddy terminates HTTPS and forwards plain HTTP to gunicorn
+# on 127.0.0.1; X-Forwarded-Proto is how Django learns the original request
+# was HTTPS. Trusting that header is only safe because gunicorn is not
+# reachable from outside -- anyone who could talk to it directly could forge it.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Once a browser has seen HSTS it refuses plain HTTP for this long, so a
+    # mistake is sticky. Start at an hour; raise it once HTTPS has been stable.
+    SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', 3600))
+    SILENCED_SYSTEM_CHECKS = [
+        # Subdomain and preload HSTS are for a registrable domain we fully
+        # control, not a single hostname under someone else's domain.
+        'security.W005',
+        'security.W021',
+        # Stemma sends no email: accounts are institution-issued and password
+        # resets go through the teacher (design/CLAUDE.md). Point MAILERS at
+        # SMTP if that ever changes.
+        'mail.E001',
+    ]
+
+    # With DEBUG off, Django's default config sends unhandled errors only to
+    # ADMINS by email, which is unset -- a 500 would leave no trace. Under
+    # systemd, stderr lands in the journal (`journalctl -u stemma`).
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {'console': {'class': 'logging.StreamHandler'}},
+        'root': {'handlers': ['console'], 'level': 'WARNING'},
+    }
 
 
 # Email

@@ -6,7 +6,11 @@
    silent refresh-and-retry before it surfaces.
    --------------------------------------------------------------------------- */
 
-const BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000';
+/* Locally the API is Django's dev server on :8000. A production build is served
+   from the same domain as the API (deploy/Caddyfile), so its requests stay
+   relative and no cross-origin access is needed. */
+const BASE =
+  import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '');
 
 const ACCESS_KEY = 'stemma.access';
 const REFRESH_KEY = 'stemma.refresh';

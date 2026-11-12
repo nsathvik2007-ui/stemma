@@ -1,0 +1,30 @@
+# Replace stemma.example.com with the real domain. Caddy obtains and renews the
+# HTTPS certificate itself and redirects plain HTTP to HTTPS.
+stemma.example.com {
+	encode gzip
+
+	# The API and the Django admin go to gunicorn.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /admin* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# The admin's CSS/JS, gathered by `manage.py collectstatic`.
+	handle_path /static/* {
+		root * /srv/stemma/backend/staticfiles
+		file_server
+	}
+
+	# There is deliberately no /media handler. Student photos are only served
+	# by the API, after it checks who is asking.
+
+	# Everything else is the built React app. Unknown paths fall back to
+	# index.html so client-side routes like /teacher/course/3 survive a reload.
+	handle {
+		root * /srv/stemma/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
