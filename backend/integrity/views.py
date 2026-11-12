@@ -34,7 +34,7 @@ from .serializers import (
     SubmissionPairSerializer,
     SubmissionSerializer,
 )
-from .vision_ocr import transcribe_handwriting
+from .ocr import transcribe_handwriting
 
 
 logger = logging.getLogger(__name__)
@@ -254,7 +254,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                 raw_text = transcribe_handwriting(image_file.read())
             except Exception as exc:
                 logger.exception("OCR failed for upload to assignment %s", assignment.id)
-            return Response({"detail": OCR_FAILED}, status=502)
+                return Response({"detail": OCR_FAILED}, status=502)
             image_file.seek(0)
             source_type = Submission.SOURCE_HANDWRITTEN
         elif raw_text:

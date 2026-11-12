@@ -9,9 +9,9 @@ import { dateAndTime } from '../../lib/dates';
 
 /* Marking, with the photo beside the transcription.
 
-   Both are shown for a handwritten submission on purpose. Cloud Vision reads
-   cursive well enough to compare but not perfectly — it substitutes characters
-   and, on sloped lines, moves whole words out of order. Marking from the
+   Both are shown for a handwritten submission on purpose. OCR reads cursive
+   well enough to compare but not perfectly — it misreads names and characters,
+   and some engines move whole words out of order on sloped lines. Marking from the
    transcription alone would mark the OCR rather than the student, so the
    original page sits next to it.
 
