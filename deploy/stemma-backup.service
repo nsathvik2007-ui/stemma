@@ -1,0 +1,7 @@
+[Unit]
+Description=Stemma backup (database and student photos)
+After=mariadb.service mysql.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/stemma/deploy/backup.sh

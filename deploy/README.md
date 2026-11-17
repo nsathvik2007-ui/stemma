@@ -127,14 +127,26 @@ refuses to start on the development secret key.
 cd /srv/stemma/backend
 sudo -u stemma venv/bin/python manage.py check --deploy   # expect: no issues
 sudo -u stemma venv/bin/python manage.py migrate
+sudo -u stemma venv/bin/python manage.py createcachetable
 sudo -u stemma venv/bin/python manage.py collectstatic --noinput
 sudo -u stemma venv/bin/python manage.py createsuperuser
 ```
 
-Accounts are institution-issued: create them in the admin at
-`https://<your domain>/admin/`. Use the college email as the username **and**
-fill in the Email field with the same address. A user is a teacher by default;
-to make one a student, also add a **Student** record linked to that user.
+`createcachetable` makes the table the sign-in limits are counted in; without
+it every sign-in fails with a server error.
+
+Accounts are institution-issued; there is no sign-up page.
+
+- **Teachers:** create them in the admin at `https://<your domain>/admin/`.
+  Use the college email as the username **and** fill in the Email field with
+  the same address, and set a password.
+- **Students:** the teacher adds them from the class's **Roster** tab by
+  pasting names and emails. Each new student gets a temporary password,
+  shown to the teacher once, and must choose their own at first sign-in. A
+  forgotten password is reset from the same tab.
+
+Sign-in limits: 10 wrong passwords for one account locks it for 15 minutes,
+and one IP address gets 100 attempts a minute.
 
 ## 7. Run gunicorn as a service
 
@@ -184,15 +196,56 @@ sudo -u stemma git pull
 sudo -u stemma backend/venv/bin/pip install -r backend/requirements.txt
 cd backend
 sudo -u stemma venv/bin/python manage.py migrate
+sudo -u stemma venv/bin/python manage.py createcachetable
 sudo -u stemma venv/bin/python manage.py collectstatic --noinput
 sudo systemctl restart stemma
 ```
 
-If the frontend changed, rebuild and copy `dist` again (step 8).
+If the frontend changed, rebuild and copy `dist` again (step 8). If the
+Caddyfile changed, repeat step 9.
 
-## Not covered yet
+## Backups
 
-- **Backups.** Nothing backs up the database or `/var/lib/stemma/media`.
-  Both need a nightly copy off the server before real students use it.
+Every night at 02:30 (India time), `deploy/backup.sh` saves the database
+and the photo folder to `/var/backups/stemma`, readable only by root, and
+deletes copies older than 14 days.
+
+```bash
+sudo cp /srv/stemma/deploy/stemma-backup.service /srv/stemma/deploy/stemma-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now stemma-backup.timer
+sudo systemctl start stemma-backup.service      # run one now
+sudo ls -l /var/backups/stemma                  # db-….sql.gz and media-….tar.gz
+```
+
+**These copies are on the same disk as the originals.** They cover mistakes
+and corruption, not losing the server. Copy them off it as well, for
+example to your own machine:
+
+```bash
+rsync -a --rsync-path="sudo rsync" <you>@<server>:/var/backups/stemma/ ~/stemma-backups/
+```
+
+On MariaDB the dump is a consistent snapshot taken without stopping the app.
+On MySQL it briefly blocks writes instead, because MySQL's snapshot needs a
+server-wide privilege the app's database user doesn't have.
+
+### Restoring
+
+Stop the app, load the dump, put the photos back, start it again:
+
+```bash
+sudo systemctl stop stemma
+gunzip -c /var/backups/stemma/db-<date>.sql.gz | sudo mariadb stemma
+sudo tar -xzf /var/backups/stemma/media-<date>.tar.gz -C /var/lib/stemma
+sudo chown -R stemma:stemma /var/lib/stemma/media
+sudo systemctl start stemma
+```
+
+Practise this once on a spare database before you need it; a backup that
+has never been restored is only a hope.
+
+## Later
+
 - **HSTS** starts at one hour (`DJANGO_HSTS_SECONDS`). Raise it to a year
   once HTTPS has been stable for a while.

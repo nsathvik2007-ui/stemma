@@ -3,6 +3,11 @@
 stemma.example.com {
 	encode gzip
 
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+
 	# The API and the Django admin go to gunicorn.
 	handle /api/* {
 		reverse_proxy 127.0.0.1:8000
@@ -22,7 +27,14 @@ stemma.example.com {
 
 	# Everything else is the built React app. Unknown paths fall back to
 	# index.html so client-side routes like /teacher/course/3 survive a reload.
+	#
+	# The Content-Security-Policy is what makes keeping the sign-in tokens in
+	# localStorage acceptable: tokens there are readable by any script on the
+	# page, and this allows only the app's own scripts -- no inline or injected
+	# ones. Google Fonts is the only outside source; blob: is the authenticated
+	# photo viewer (SubmissionPhoto). Django's admin is left out on purpose.
 	handle {
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		root * /srv/stemma/frontend/dist
 		try_files {path} /index.html
 		file_server
