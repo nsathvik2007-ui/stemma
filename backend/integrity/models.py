@@ -15,6 +15,10 @@ class Student(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="student_profile"
     )
+    # Set while the password is one a teacher issued (bulk add or reset). The
+    # teacher has seen it, so the app asks the student to choose their own
+    # before anything else.
+    must_change_password = models.BooleanField(default=False)
 
     def __str__(self):
         return self.user.get_full_name() or self.user.username

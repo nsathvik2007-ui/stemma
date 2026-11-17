@@ -78,6 +78,21 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    # Sign-in only (see integrity/auth.py). Per IP, and generous, because a
+    # whole class shares one campus IP; the per-account limit does the real work.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '100/min',
+    },
+}
+
+# Sign-in limits are counted in the cache, which has to be shared by every
+# gunicorn worker -- the default in-memory cache is per process, so each worker
+# would keep its own count. Needs `manage.py createcachetable` once per database.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'stemma_cache',
+    }
 }
 
 # Defaults are a 5-minute access token, which expires out from under a teacher
@@ -198,6 +213,10 @@ MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 # reachable from outside -- anyone who could talk to it directly could forge it.
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # Every request reaches Django from Caddy on 127.0.0.1, so per-IP throttles
+    # would count the whole site as one client. Caddy replaces X-Forwarded-For
+    # with the real client address; take the one entry it set.
+    REST_FRAMEWORK['NUM_PROXIES'] = 1
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

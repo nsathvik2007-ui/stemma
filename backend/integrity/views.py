@@ -1,6 +1,8 @@
 import logging
 import mimetypes
 
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -12,8 +14,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import accounts
 from .ai_review import recalibrate_threshold, review_pair
-from .auth import IsStudent, IsTeacher
+from .auth import IsStudent, IsTeacher, clear_failures, raise_if_locked, record_failure
 from .candidates import run_assignment_scan
 from .models import (
     AIReview,
@@ -21,6 +24,7 @@ from .models import (
     Course,
     Enrollment,
     Grade,
+    Student,
     Submission,
     SubmissionPair,
     TeacherFeedback,
@@ -79,6 +83,44 @@ class CourseViewSet(viewsets.ModelViewSet):
             "student__user__first_name", "student__user__username"
         )
         return Response(RosterEntrySerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="students")
+    def add_students(self, request, pk=None):
+        """Add a class at once: {"students": [{"name", "email"}, ...]}.
+
+        New accounts come back with a temporary password, shown to the teacher
+        this once and never stored in a readable form, hence no-store.
+        """
+        course = self.get_object()
+        result, errors = accounts.add_students(course, request.data.get("students"))
+        if errors:
+            return Response({"errors": errors}, status=400)
+        response = Response(result, status=201)
+        response["Cache-Control"] = "no-store"
+        return response
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"students/(?P<student_id>\d+)/reset-password",
+    )
+    def reset_password(self, request, pk=None, student_id=None):
+        """Password reset goes through the teacher (design/CLAUDE.md). Scoped
+        to students enrolled in this teacher's course; anyone else is 404."""
+        course = self.get_object()
+        enrollment = get_object_or_404(
+            course.enrollments.select_related("student__user"), student_id=student_id
+        )
+        user = enrollment.student.user
+        response = Response(
+            {
+                "name": user.get_full_name() or user.username,
+                "email": user.email or user.username,
+                "temporary_password": accounts.issue_temporary_password(user),
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class AssignmentViewSet(viewsets.ModelViewSet):
@@ -195,11 +237,30 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         assignment = self.get_object()
 
         image_file = request.FILES.get("image")
-        student_name = request.data.get("student_name")
         if not image_file:
             return Response({"detail": "image is required"}, status=400)
-        if not student_name:
-            return Response({"detail": "student_name is required"}, status=400)
+
+        # A paper handed in by someone on the roster is linked to their account,
+        # so they see the grade and comment like any other submission. A name
+        # alone (student_id omitted) is for someone without an account.
+        student = None
+        student_id = request.data.get("student_id")
+        if student_id:
+            student = Student.objects.filter(
+                pk=student_id, enrollments__course=assignment.course
+            ).select_related("user").first()
+            if student is None:
+                return Response({"detail": "That student is not in this class."}, status=400)
+            if Submission.objects.filter(assignment=assignment, student=student).exists():
+                return Response(
+                    {"detail": "This student has already handed in work for this assignment."},
+                    status=409,
+                )
+            student_name = student.user.get_full_name() or student.user.username
+        else:
+            student_name = request.data.get("student_name")
+            if not student_name:
+                return Response({"detail": "student_id or student_name is required"}, status=400)
 
         try:
             raw_text = transcribe_handwriting(image_file.read())
@@ -212,6 +273,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         submission = Submission.objects.create(
             assignment=assignment,
+            student=student,
             student_name=student_name,
             raw_text=raw_text,
             source_type=Submission.SOURCE_HANDWRITTEN,
@@ -541,6 +603,38 @@ class SubmitFeedbackView(APIView):
         )
         recalibrate_threshold(review.pair.assignment)
         return Response({"ai_review": review.id, "confirmed": feedback.confirmed})
+
+
+class ChangePasswordView(APIView):
+    """Either role. Required right after a teacher-issued password, and open
+    any time after. Wrong current passwords count toward a lockout like
+    sign-in does, so a stolen access token can't be used to guess it."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        raise_if_locked("password", str(user.pk))
+
+        current = str(request.data.get("current_password", ""))
+        new = str(request.data.get("new_password", ""))
+        if not user.check_password(current):
+            record_failure("password", str(user.pk))
+            return Response({"current_password": ["That isn't your current password."]}, status=400)
+        if new == current:
+            return Response(
+                {"new_password": ["Choose a password different from the current one."]}, status=400
+            )
+        try:
+            validate_password(new, user)
+        except ValidationError as exc:
+            return Response({"new_password": exc.messages}, status=400)
+
+        user.set_password(new)
+        user.save(update_fields=["password"])
+        Student.objects.filter(user=user).update(must_change_password=False)
+        clear_failures("password", str(user.pk))
+        return Response({"detail": "Password changed."})
 
 
 class JoinCourseView(APIView):

@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AssignmentViewSet,
+    ChangePasswordView,
     CourseViewSet,
     JoinCourseView,
     MyCoursesView,
@@ -23,4 +24,5 @@ urlpatterns = [
     path("courses/join/", JoinCourseView.as_view(), name="join-course"),
     path("my-courses/", MyCoursesView.as_view(), name="my-courses"),
     path("teacher-summary/", TeacherSummaryView.as_view(), name="teacher-summary"),
+    path("me/password/", ChangePasswordView.as_view(), name="change-password"),
 ] + router.urls
