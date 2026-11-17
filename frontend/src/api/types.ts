@@ -62,6 +62,27 @@ export interface RosterEntry {
   enrolled_at: string;
 }
 
+/* POST /api/courses/{id}/students/. A temporary password appears in this
+   response and the reset one only — the server keeps no readable copy. */
+export interface IssuedAccount {
+  name: string;
+  email: string;
+  temporary_password: string;
+}
+
+export interface AddStudentsResult {
+  created: IssuedAccount[];
+  enrolled: { name: string; email: string }[];
+  already_enrolled: { name: string; email: string }[];
+}
+
+/* One bad row rejects the whole batch; `row` is 1-based, null for the batch. */
+export interface AddStudentsError {
+  row: number | null;
+  email?: string;
+  detail: string;
+}
+
 export interface TeacherSummaryRow {
   course: number;
   name: string;

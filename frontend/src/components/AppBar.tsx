@@ -42,6 +42,7 @@ export function AppBar({
             </div>
           </div>
         </div>
+        <Link to="/password" className="appbar-link">Password</Link>
         <button className="btn-solid" onClick={onSignOut}>Sign out</button>
       </div>
     </header>

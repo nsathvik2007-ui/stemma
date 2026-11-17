@@ -83,6 +83,9 @@ export default function Login() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reachable, setReachable] = useState(true);
+  /* 429: too many wrong passwords for this account, or too many attempts from
+     this network. The server's sentence says which and for how long. */
+  const [throttled, setThrottled] = useState<string | null>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLFormElement>(null);
 
@@ -123,16 +126,20 @@ export default function Login() {
     e.preventDefault();
     setError(false);
     setReachable(true);
+    setThrottled(null);
     setBusy(true);
     runScan();
     try {
-      const { role } = await signIn(username, password);
-      nav(role === 'teacher' ? '/teacher' : '/student', { replace: true });
+      const { role, mustChangePassword } = await signIn(username, password);
+      nav(mustChangePassword ? '/password' : role === 'teacher' ? '/teacher' : '/student', { replace: true });
     } catch (err) {
       /* 401 on this route means bad credentials — accounts are institution-
-         issued, so the recovery path is IT, not a reset link. */
+         issued, so the recovery path is the teacher, not a reset link. */
       if (err instanceof ApiError && err.status === 401) setError(true);
-      else setReachable(false);
+      else if (err instanceof ApiError && err.status === 429) {
+        const detail = (err.body as { detail?: unknown } | null)?.detail;
+        setThrottled(typeof detail === 'string' ? detail : 'Too many attempts. Try again in a few minutes.');
+      } else setReachable(false);
       setBusy(false);
       settle();
     }
@@ -202,15 +209,25 @@ export default function Login() {
             <div className="login-error" role="alert">
               <span style={{ fontSize: 'var(--text-body)', fontWeight: 600 }}>That didn't match</span>
               <span style={{ fontSize: 14.5, lineHeight: 1.5, color: 'rgba(247,244,238,0.74)', textWrap: 'pretty' }}>
-                Check the email and password. The password is case-sensitive.
+                Check the email and password. The password is case-sensitive. If you have forgotten it, your teacher can reset it.
+              </span>
+            </div>
+          )}
+          {throttled && (
+            <div className="login-error" role="alert">
+              <span style={{ fontSize: 'var(--text-body)', fontWeight: 600 }}>Too many attempts</span>
+              <span style={{ fontSize: 14.5, lineHeight: 1.5, color: 'rgba(247,244,238,0.74)', textWrap: 'pretty' }}>
+                {throttled}
               </span>
             </div>
           )}
           {!reachable && (
             <div className="login-error" role="alert">
-              <span style={{ fontSize: 'var(--text-body)', fontWeight: 600 }}>Can't reach the server</span>
+              <span style={{ fontSize: 'var(--text-body)', fontWeight: 600 }}>Can't reach Stemma</span>
               <span style={{ fontSize: 14.5, lineHeight: 1.5, color: 'rgba(247,244,238,0.74)', textWrap: 'pretty' }}>
-                Check that Django is running on port 8000.
+                {import.meta.env.DEV
+                  ? 'Check that Django is running on port 8000.'
+                  : 'Check your connection and try again in a moment.'}
               </span>
             </div>
           )}

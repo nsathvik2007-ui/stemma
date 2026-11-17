@@ -109,6 +109,16 @@
 }
 
 .appbar-right { display: flex; align-items: center; gap: 16px; }
+.appbar-link {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--bone-55);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.appbar-link:hover { color: var(--vermilion-light); }
 
 .userpill {
   position: relative;

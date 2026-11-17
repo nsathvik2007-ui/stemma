@@ -4,7 +4,7 @@
 
 import { api } from './client';
 import type {
-  Assignment, Course, Grade, RosterEntry,
+  AddStudentsResult, Assignment, Course, Grade, IssuedAccount, RosterEntry,
   PairOverlap, Submission, SubmissionPair, TeacherSummaryRow,
 } from './types';
 
@@ -14,6 +14,12 @@ export const teacherApi = {
   courses: () => api.get<Course[]>('/courses/'),
   createCourse: (name: string) => api.post<Course>('/courses/', { name }),
   roster: (courseId: number) => api.get<RosterEntry[]>(`/courses/${courseId}/roster/`),
+  /* Accounts are institution-issued: the teacher adds the class, and each new
+     student gets a temporary password to change on first sign-in. */
+  addStudents: (courseId: number, students: { name: string; email: string }[]) =>
+    api.post<AddStudentsResult>(`/courses/${courseId}/students/`, { students }),
+  resetPassword: (courseId: number, studentId: number) =>
+    api.post<IssuedAccount>(`/courses/${courseId}/students/${studentId}/reset-password/`),
 
   assignments: () => api.get<Assignment[]>('/assignments/'),
   createAssignment: (body: Partial<Assignment>) => api.post<Assignment>('/assignments/', body),
@@ -26,10 +32,13 @@ export const teacherApi = {
     api.post<{ reviewed: number[]; failed: { pair_id: number; error: string }[] }>(`/assignments/${assignmentId}/review/`),
   assignmentPairs: (assignmentId: number) => api.get<SubmissionPair[]>(`/assignments/${assignmentId}/pairs/`),
 
-  upload: (assignmentId: number, file: File, studentName: string) => {
+  /* A paper copy, photographed. Someone on the roster is linked by id so they
+     see the grade; a bare name is for someone without an account. */
+  upload: (assignmentId: number, file: File, who: { studentId: number } | { studentName: string }) => {
     const form = new FormData();
     form.append('image', file);
-    form.append('student_name', studentName);
+    if ('studentId' in who) form.append('student_id', String(who.studentId));
+    else form.append('student_name', who.studentName);
     return api.post<Submission>(`/assignments/${assignmentId}/upload/`, form);
   },
 

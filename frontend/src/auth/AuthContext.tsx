@@ -14,14 +14,25 @@ interface AuthState {
   authed: boolean;
   role: Role | null;
   email: string | null;
+  /* On a teacher-issued password: every route sends this account to /password
+     until it chooses its own. */
+  mustChangePassword: boolean;
   signIn: (username: string, password: string) => Promise<Identity>;
   signOut: () => void;
+  passwordChanged: () => void;
 }
 
 const Ctx = createContext<AuthState | null>(null);
 
 const ROLE_KEY = 'stemma.role';
 const EMAIL_KEY = 'stemma.email';
+const MUST_CHANGE_KEY = 'stemma.mustChangePassword';
+
+function forget() {
+  localStorage.removeItem(ROLE_KEY);
+  localStorage.removeItem(EMAIL_KEY);
+  localStorage.removeItem(MUST_CHANGE_KEY);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(() => tokens.access !== null);
@@ -31,15 +42,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(
     () => localStorage.getItem(EMAIL_KEY),
   );
+  const [mustChangePassword, setMustChange] = useState(
+    () => localStorage.getItem(MUST_CHANGE_KEY) === '1',
+  );
 
   /* The transport has already cleared the tokens by the time this fires; this
      drops the rest of the identity so Require redirects to /login. */
   useEffect(() => {
     function expire() {
-      localStorage.removeItem(ROLE_KEY);
-      localStorage.removeItem(EMAIL_KEY);
+      forget();
       setRole(null);
       setEmail(null);
+      setMustChange(false);
       setAuthed(false);
     }
     window.addEventListener(SESSION_EXPIRED, expire);
@@ -51,25 +65,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authed,
       role,
       email,
+      mustChangePassword,
       async signIn(username, password) {
         const id = await apiLogin(username, password);
         localStorage.setItem(ROLE_KEY, id.role);
         localStorage.setItem(EMAIL_KEY, id.email);
+        if (id.mustChangePassword) localStorage.setItem(MUST_CHANGE_KEY, '1');
+        else localStorage.removeItem(MUST_CHANGE_KEY);
         setRole(id.role);
         setEmail(id.email);
+        setMustChange(id.mustChangePassword);
         setAuthed(true);
         return id;
       },
       signOut() {
         tokens.clear();
-        localStorage.removeItem(ROLE_KEY);
-        localStorage.removeItem(EMAIL_KEY);
+        forget();
         setRole(null);
         setEmail(null);
+        setMustChange(false);
         setAuthed(false);
       },
+      passwordChanged() {
+        localStorage.removeItem(MUST_CHANGE_KEY);
+        setMustChange(false);
+      },
     }),
-    [authed, role, email],
+    [authed, role, email, mustChangePassword],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

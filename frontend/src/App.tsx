@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Login from './routes/Login';
+import ChangePassword from './routes/ChangePassword';
 import TeacherHome from './routes/teacher/TeacherHome';
 import TeacherCourse from './routes/teacher/TeacherCourse';
 import NewAssignment from './routes/teacher/NewAssignment';
@@ -21,16 +22,27 @@ import type { ReactNode } from 'react';
    never reach a student view; keeping the trees apart makes a cross-import
    obvious in review rather than a one-line prop-spread accident. */
 
+/* A teacher-issued password is changed before anything else is reachable.
+   This is the student's own protection — the teacher has seen that password —
+   so a guard in the client is enough; the server keeps the flag. */
 function Require({ role, children }: { role: Role; children: ReactNode }) {
-  const { authed, role: actual } = useAuth();
+  const { authed, role: actual, mustChangePassword } = useAuth();
   if (!authed) return <Navigate to="/login" replace />;
+  if (mustChangePassword) return <Navigate to="/password" replace />;
   if (actual !== role) return <Navigate to={actual === 'teacher' ? '/teacher' : '/student'} replace />;
   return <>{children}</>;
 }
 
-function Root() {
-  const { authed, role } = useAuth();
+function RequireSignedIn({ children }: { children: ReactNode }) {
+  const { authed } = useAuth();
   if (!authed) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function Root() {
+  const { authed, role, mustChangePassword } = useAuth();
+  if (!authed) return <Navigate to="/login" replace />;
+  if (mustChangePassword) return <Navigate to="/password" replace />;
   return <Navigate to={role === 'teacher' ? '/teacher' : '/student'} replace />;
 }
 
@@ -41,6 +53,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Root />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/password" element={<RequireSignedIn><ChangePassword /></RequireSignedIn>} />
           <Route path="/teacher" element={<Require role="teacher"><TeacherHome /></Require>} />
           <Route path="/teacher/course/:courseId" element={<Require role="teacher"><TeacherCourse /></Require>} />
           <Route path="/teacher/course/:courseId/new-assignment" element={<Require role="teacher"><NewAssignment /></Require>} />

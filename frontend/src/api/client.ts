@@ -126,12 +126,16 @@ export type Role = 'teacher' | 'student';
 
 /* The server decides the role and returns it alongside the pair (it is also a
    claim on the token itself). The client never asks the user which they are. */
-export interface Identity { role: Role; email: string; }
+/* mustChangePassword: the account is on a password a teacher issued, so the
+   app asks for a new one before anything else. */
+export interface Identity { role: Role; email: string; mustChangePassword: boolean; }
 
 export async function login(username: string, password: string): Promise<Identity> {
   const res = await raw('/token/', { method: 'POST', body: JSON.stringify({ username, password }) }, false);
   if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
-  const data = (await res.json()) as { access: string; refresh: string; role: Role; email: string };
+  const data = (await res.json()) as {
+    access: string; refresh: string; role: Role; email: string; must_change_password?: boolean;
+  };
   tokens.set(data.access, data.refresh);
-  return { role: data.role, email: data.email };
+  return { role: data.role, email: data.email, mustChangePassword: data.must_change_password === true };
 }

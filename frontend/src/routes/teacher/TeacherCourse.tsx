@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { teacherApi } from '../../api/teacher';
-import type { Assignment, Course, RosterEntry } from '../../api/types';
+import type { Assignment, Course } from '../../api/types';
 import { Empty, Shell, Skeleton } from '../../components/Shell';
 import { dateAndTime, relativeDeadline } from '../../lib/dates';
+import RosterTab from './RosterTab';
 
 /* One class: its work set and its roster, as two tabs over the same header.
 
    /api/courses/ returns every course this teacher owns and /api/assignments/
    every assignment across them, so both are filtered to this id — the same
-   shape the student Classroom uses. The roster is a separate call and is only
-   made when that tab is first opened; most visits here are about the work set.
+   shape the student Classroom uses. The roster (RosterTab) is fetched only
+   when that tab is opened; most visits here are about the work set.
 
    The join code is displayed rather than actioned. It is the one thing a
    teacher reads aloud to a room, so it is set in mono at a size that survives
@@ -27,8 +28,6 @@ export default function TeacherCourse() {
   const [error, setError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>('work');
-  const [roster, setRoster] = useState<RosterEntry[] | null>(null);
-  const [rosterError, setRosterError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,23 +44,6 @@ export default function TeacherCourse() {
       cancelled = true;
     };
   }, [id]);
-
-  /* Fetched on first open of the tab, not on mount. */
-  useEffect(() => {
-    if (tab !== 'roster' || roster || rosterError) return;
-    let cancelled = false;
-    teacherApi
-      .roster(id)
-      .then((r) => {
-        if (!cancelled) setRoster(r);
-      })
-      .catch(() => {
-        if (!cancelled) setRosterError('Could not load the roster.');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, id, roster, rosterError]);
 
   if (error) {
     return (
@@ -162,34 +144,7 @@ export default function TeacherCourse() {
         </>
       )}
 
-      {tab === 'roster' && (
-        <>
-          {rosterError && <p className="error">{rosterError}</p>}
-          {!roster && !rosterError && <Skeleton rows={4} />}
-          {roster?.length === 0 && (
-            <Empty title="Nobody has joined yet" hint={`Share the join code ${course?.join_code ?? ''} with your class.`} />
-          )}
-          {roster && roster.length > 0 && (
-            <div style={{ border: '1px solid var(--bone-18)', borderRadius: 'var(--radius-card)', overflow: 'hidden' }}>
-              {roster.map((r, i) => (
-                <div
-                  key={r.id}
-                  style={{
-                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
-                    padding: '16px 24px', background: 'var(--rail)',
-                    borderTop: i === 0 ? 'none' : '1px solid var(--bone-18)',
-                  }}
-                >
-                  <span>{r.name}</span>
-                  <span style={{ color: 'var(--bone-55)', fontFamily: 'var(--font-mono)', fontSize: 13 }}>
-                    {r.email || '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+      {tab === 'roster' && <RosterTab courseId={id} joinCode={course?.join_code} />}
     </Shell>
   );
 }

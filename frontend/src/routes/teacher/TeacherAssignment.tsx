@@ -4,6 +4,7 @@ import { teacherApi } from '../../api/teacher';
 import type { Assignment, Submission, SubmissionPair } from '../../api/types';
 import { Empty, Shell, Skeleton } from '../../components/Shell';
 import { dateAndTime } from '../../lib/dates';
+import PaperUpload from './PaperUpload';
 
 /* One assignment: who handed in, and what the scan found.
 
@@ -156,6 +157,18 @@ export default function TeacherAssignment() {
             <p style={{ marginTop: 14, color: 'var(--bone-55)', fontSize: 13.5 }}>
               {drafts.length} draft{drafts.length === 1 ? '' : 's'} in progress, not yet handed in. Drafts are not scanned.
             </p>
+          )}
+
+          {assignment && submissions && (
+            <PaperUpload
+              assignmentId={id}
+              courseId={assignment.course}
+              submissions={submissions}
+              onUploaded={(name) => {
+                load();
+                setNotice(`Paper added for ${name}. Scan again to include it.`);
+              }}
+            />
           )}
         </section>
 
