@@ -23,6 +23,28 @@ OCR.space's free plan allows 500 requests a day **per IP address**. Every
 student's photo leaves from this server's one IP, so that's 500 photo
 submissions a day across the whole site; typed submissions don't count.
 
+### On Oracle Cloud
+
+Two firewalls stand in front of an Oracle instance, and both block web
+traffic by default:
+
+1. **The console's security list.** Open the instance's subnet → its
+   security list → Add Ingress Rules: source `0.0.0.0/0`, TCP, destination
+   ports `80,443`. Also add it to any Network Security Group on the VNIC.
+   Until this is done, Caddy's certificate request fails with "Timeout
+   during connect (likely firewall problem)".
+2. **The Ubuntu image's own iptables**, which rejects everything but SSH.
+   Insert the two rules ahead of its REJECT line and save them:
+
+   ```bash
+   for port in 80 443; do sudo iptables -I INPUT 5 -p tcp -m state --state NEW --dport $port -j ACCEPT; done
+   sudo netfilter-persistent save
+   ```
+
+`sudo iptables -L INPUT -v -n` shows packet counts per rule. Zero on ports 80
+and 443 means the first firewall is still blocking. On the Micro shape, make
+the swap file 2 GB rather than 1.
+
 ## 1. Packages
 
 ```bash
