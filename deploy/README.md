@@ -49,15 +49,24 @@ the swap file 2 GB rather than 1.
 
 ```bash
 sudo apt update
-sudo apt install -y python3-venv git mariadb-server
+sudo apt install -y python3-venv git mariadb-server redis-server
 ```
 
 Django 6.1 needs **MariaDB 10.11+ or MySQL 8.4+**. Ubuntu 24.04's
 `mariadb-server` is 10.11, so it qualifies; its `mysql-server` is 8.0, which
-Django refuses. Development runs on MySQL; Stemma uses nothing MySQL-specific,
-but MariaDB has not been tested with it yet, so run through the app once after
-deploying. To stay on MySQL instead, install 8.4 from MySQL's own APT
-repository.
+Django refuses. Stemma runs on MariaDB in production and MySQL in
+development; it uses nothing specific to either. To stay on MySQL instead,
+install 8.4 from MySQL's own APT repository.
+
+**Redis** is the cache the sign-in limits are counted in. Ubuntu's package
+already listens on localhost only. Cap its memory and turn off saving to disk
+— the counters are meant to expire, not to survive a restart:
+
+```bash
+printf '\nmaxmemory 64mb\nmaxmemory-policy allkeys-lru\nsave ""\n' | sudo tee -a /etc/redis/redis.conf
+sudo systemctl restart redis-server
+redis-cli ping   # PONG
+```
 
 Install Caddy from its official repository:
 <https://caddyserver.com/docs/install#debian-ubuntu-raspbian>
@@ -129,6 +138,7 @@ DB_PORT=3306
 GROQ_API_KEY=<your Groq key>
 OCR_PROVIDER=ocrspace
 OCR_SPACE_API_KEY=<your OCR.space key>
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 `OCR_PROVIDER=google` switches back to Google Cloud Vision, if its billing is
@@ -154,8 +164,10 @@ sudo -u stemma venv/bin/python manage.py collectstatic --noinput
 sudo -u stemma venv/bin/python manage.py createsuperuser
 ```
 
-`createcachetable` makes the table the sign-in limits are counted in; without
-it every sign-in fails with a server error.
+With `REDIS_URL` set, the sign-in limits are counted in Redis, and if Redis
+is down, sign-in fails with a server error. Without `REDIS_URL` they fall back
+to a table in the database; `createcachetable` makes it, and is harmless to
+run either way.
 
 Accounts are institution-issued; there is no sign-up page.
 

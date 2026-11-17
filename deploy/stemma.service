@@ -1,6 +1,8 @@
 [Unit]
 Description=Stemma (Django under gunicorn)
-After=network.target mariadb.service mysql.service
+After=network.target mariadb.service mysql.service redis-server.service
+# Sign-in needs the cache; start Redis with the app if it is installed.
+Wants=redis-server.service
 
 [Service]
 User=stemma

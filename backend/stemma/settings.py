@@ -87,13 +87,24 @@ REST_FRAMEWORK = {
 
 # Sign-in limits are counted in the cache, which has to be shared by every
 # gunicorn worker -- the default in-memory cache is per process, so each worker
-# would keep its own count. Needs `manage.py createcachetable` once per database.
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
-        'LOCATION': 'stemma_cache',
+# would keep its own count. Production uses Redis (REDIS_URL, e.g.
+# redis://127.0.0.1:6379/0): counters live in memory and expire on their own.
+# Without it, a table in the main database does the same job, which is what
+# local development uses (`manage.py createcachetable` once per database).
+if os.environ.get('REDIS_URL'):
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': os.environ['REDIS_URL'],
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'stemma_cache',
+        }
+    }
 
 # Defaults are a 5-minute access token, which expires out from under a teacher
 # part-way through a review queue. Refresh rotation/blacklisting is deliberately
