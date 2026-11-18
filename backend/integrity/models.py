@@ -71,6 +71,13 @@ class Assignment(models.Model):
     max_score = models.FloatField(default=20)
     similarity_threshold = models.FloatField(default=0.25)
     created_at = models.DateTimeField(auto_now_add=True)
+    # What the teacher writes under the title: the question, instructions,
+    # links. Plain text; clients keep its line breaks.
+    description = models.TextField(blank=True)
+    # One handout, PDF or image, Google-Classroom style. Like submission
+    # photos it has no public URL: GET /api/assignments/{id}/attachment/
+    # serves it to the class's teacher and enrolled students only.
+    attachment = models.FileField(upload_to="assignments/%Y/%m/", blank=True)
 
     def __str__(self):
         return f"{self.title} ({self.course.name})"

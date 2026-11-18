@@ -1,3 +1,5 @@
+import os
+
 from rest_framework import serializers
 
 from .models import (
@@ -18,19 +20,93 @@ class CourseSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "join_code", "created_at"]
 
 
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+
+# Recognised by their first bytes, not by the name or the browser's claimed
+# type, either of which is the uploader's to choose. An HTML page renamed
+# notes.pdf is refused rather than stored and later served from our origin.
+# The stored file is renamed to the extension its bytes prove.
+ATTACHMENT_SIGNATURES = [
+    (b"%PDF-", "pdf"),
+    (b"\xff\xd8\xff", "jpg"),
+    (b"\x89PNG\r\n\x1a\n", "png"),
+]
+
+
+def _sniff_attachment(upload):
+    head = upload.read(8)
+    upload.seek(0)
+    for signature, extension in ATTACHMENT_SIGNATURES:
+        if head.startswith(signature):
+            return extension
+    return None
+
+
 class AssignmentSerializer(serializers.ModelSerializer):
+    # Write-only: the response carries what the client needs to show the
+    # file, never a storage path or URL.
+    attachment = serializers.FileField(write_only=True, required=False)
+    remove_attachment = serializers.BooleanField(write_only=True, required=False, default=False)
+    has_attachment = serializers.SerializerMethodField()
+    attachment_name = serializers.SerializerMethodField()
+    attachment_type = serializers.SerializerMethodField()
+
     class Meta:
         model = Assignment
         fields = [
             "id",
             "course",
             "title",
+            "description",
             "due_at",
             "max_score",
             "similarity_threshold",
             "created_at",
+            "attachment",
+            "remove_attachment",
+            "has_attachment",
+            "attachment_name",
+            "attachment_type",
         ]
         read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"description": {"max_length": 10000}}
+
+    def get_has_attachment(self, obj):
+        return bool(obj.attachment)
+
+    def get_attachment_name(self, obj):
+        return os.path.basename(obj.attachment.name) if obj.attachment else None
+
+    def get_attachment_type(self, obj):
+        if not obj.attachment:
+            return None
+        return "pdf" if obj.attachment.name.lower().endswith(".pdf") else "image"
+
+    def validate_attachment(self, upload):
+        if upload.size > ATTACHMENT_MAX_BYTES:
+            raise serializers.ValidationError("Attachments can be up to 10 MB.")
+        extension = _sniff_attachment(upload)
+        if extension is None:
+            raise serializers.ValidationError("Attach a PDF, JPG or PNG file.")
+        stem = os.path.splitext(os.path.basename(upload.name))[0] or "attachment"
+        upload.name = f"{stem[:80]}.{extension}"
+        return upload
+
+    def create(self, validated_data):
+        validated_data.pop("remove_attachment", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Replacing or removing the handout deletes the old file, so files
+        # nobody can reach any more don't pile up on the server.
+        remove = validated_data.pop("remove_attachment", False)
+        if remove and "attachment" not in validated_data:
+            validated_data["attachment"] = ""
+        old_name = instance.attachment.name if instance.attachment else None
+        instance = super().update(instance, validated_data)
+        if old_name and instance.attachment.name != old_name:
+            instance.attachment.storage.delete(old_name)
+        return instance
 
 
 class GradeSerializer(serializers.ModelSerializer):

@@ -1,5 +1,6 @@
 import logging
 import mimetypes
+import os
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -158,6 +159,31 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if course.teacher_id != self.request.user.id:
             raise PermissionDenied("You don't own this course.")
         serializer.save()
+
+    def perform_update(self, serializer):
+        # get_queryset limits which assignment can be edited, not where it can
+        # be moved: without this, a PATCH naming another teacher's course id
+        # would plant this assignment in their class.
+        course = serializer.validated_data.get("course")
+        if course is not None and course.teacher_id != self.request.user.id:
+            raise PermissionDenied("You don't own this course.")
+        serializer.save()
+
+    @action(detail=True, methods=["get"])
+    def attachment(self, request, pk=None):
+        """The teacher's handout. Scoped like every read here: the class's
+        teacher and its enrolled students; anyone else gets 404."""
+        assignment = self.get_object()
+        if not assignment.attachment:
+            raise Http404("This assignment has no attachment.")
+        content_type, _ = mimetypes.guess_type(assignment.attachment.name)
+        response = FileResponse(
+            assignment.attachment.open("rb"),
+            content_type=content_type or "application/octet-stream",
+            filename=os.path.basename(assignment.attachment.name),
+        )
+        response["Cache-Control"] = "private, no-store"
+        return response
 
     @action(detail=True, methods=["post"])
     def analyze(self, request, pk=None):
