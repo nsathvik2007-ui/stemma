@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AppBar } from '../../components/AppBar';
+import { AssignmentBrief } from '../../components/AssignmentBrief';
 import { MeshField } from '../../components/MeshField';
 import { Mark } from '../../components/Mark';
 import { useAuth } from '../../auth/AuthContext';
@@ -178,6 +179,17 @@ export default function Submit() {
             <h1>{assignment.title}</h1>
           </div>
         </div>
+
+        <AssignmentBrief
+          key={assignment.attachment_name ?? 'none'}
+          description={assignment.description}
+          attachment={
+            assignment.attachment_name && assignment.attachment_type
+              ? { name: assignment.attachment_name, type: assignment.attachment_type }
+              : null
+          }
+          load={() => studentApi.attachment(id)}
+        />
 
         {showComposer ? (
           <div className="composer">

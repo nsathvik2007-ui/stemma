@@ -115,7 +115,10 @@ export const api = {
       body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
     }),
   patch: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+    request<T>(path, {
+      method: 'PATCH',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   /* For files behind auth. An <img src> cannot send the Authorization header,
      so the bytes are fetched here and shown through an object URL. */

@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { teacherApi } from '../../api/teacher';
 import type { Assignment, Submission, SubmissionPair } from '../../api/types';
 import { Empty, Shell, Skeleton } from '../../components/Shell';
+import { AssignmentBrief } from '../../components/AssignmentBrief';
 import { dateAndTime } from '../../lib/dates';
+import BriefEditor from './BriefEditor';
 import PaperUpload from './PaperUpload';
 
 /* One assignment: who handed in, and what the scan found.
@@ -34,6 +36,7 @@ export default function TeacherAssignment() {
 
   const [busy, setBusy] = useState<null | 'scan' | 'review'>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editingBrief, setEditingBrief] = useState(false);
 
   const load = useCallback(() => {
     return Promise.all([teacherApi.assignments(), teacherApi.submissions(), teacherApi.assignmentPairs(id)])
@@ -109,10 +112,38 @@ export default function TeacherAssignment() {
         {assignment ? assignment.title : 'Loading…'}
       </h1>
       {assignment && (
-        <p style={{ margin: '0 0 28px', color: 'var(--bone-55)' }}>
+        <p style={{ margin: '0 0 22px', color: 'var(--bone-55)' }}>
           {dateAndTime(assignment.due_at)} · out of {assignment.max_score} · flags above{' '}
           {pct(assignment.similarity_threshold)}
         </p>
+      )}
+
+      {assignment && editingBrief && (
+        <BriefEditor
+          assignment={assignment}
+          onSaved={(updated) => {
+            setAssignment(updated);
+            setEditingBrief(false);
+          }}
+          onCancel={() => setEditingBrief(false)}
+        />
+      )}
+      {assignment && !editingBrief && (
+        <div style={{ display: 'grid', gap: 12, marginBottom: 28, maxWidth: 760 }}>
+          <AssignmentBrief
+            key={assignment.attachment_name ?? 'none'}
+            description={assignment.description}
+            attachment={
+              assignment.attachment_name && assignment.attachment_type
+                ? { name: assignment.attachment_name, type: assignment.attachment_type }
+                : null
+            }
+            load={() => teacherApi.attachment(id)}
+          />
+          <button className="btn btn-secondary" style={{ justifySelf: 'start' }} onClick={() => setEditingBrief(true)}>
+            {assignment.description || assignment.has_attachment ? 'Edit instructions' : 'Add instructions or a file'}
+          </button>
+        </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 24, alignItems: 'start' }}>

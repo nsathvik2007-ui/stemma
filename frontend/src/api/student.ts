@@ -29,4 +29,7 @@ export const studentApi = {
 
   /* The photo this student handed in. Scoped to their own submissions. */
   photo: (submissionId: number) => api.blob(`/submissions/${submissionId}/image/`),
+
+  /* The teacher's handout for an assignment in one of this student's classes. */
+  attachment: (assignmentId: number) => api.blob(`/assignments/${assignmentId}/attachment/`),
 };

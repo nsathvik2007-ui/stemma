@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { teacherApi } from '../../api/teacher';
 import { ApiError } from '../../api/client';
 import { Shell } from '../../components/Shell';
+import { ATTACHMENT_ACCEPT, attachmentProblem, fileSize } from '../../lib/attachments';
 import { toIstIso } from '../../lib/dates';
 
-/* Title, deadline, mark scheme, threshold.
+/* Title, instructions and a handout, deadline, mark scheme, threshold.
 
    The deadline input is datetime-local, which yields a naive "2026-09-12T17:00"
    with no zone. Django reads a naive string as UTC, so sending it unchanged
@@ -23,6 +24,9 @@ export default function NewAssignment() {
   const navigate = useNavigate();
 
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [dueAt, setDueAt] = useState('');
   const [maxScore, setMaxScore] = useState('20');
   const [threshold, setThreshold] = useState('0.25');
@@ -42,18 +46,36 @@ export default function NewAssignment() {
     setBusy(true);
     setError(null);
     try {
-      const created = await teacherApi.createAssignment({
-        course: id,
-        title: title.trim(),
-        due_at: dueAt ? toIstIso(dueAt) : null,
-        max_score: score,
-        similarity_threshold: thr,
-      });
+      const created = await teacherApi.createAssignment(
+        {
+          course: id,
+          title: title.trim(),
+          description: description.trim(),
+          due_at: dueAt ? toIstIso(dueAt) : null,
+          max_score: score,
+          similarity_threshold: thr,
+        },
+        file,
+      );
       navigate(`/teacher/assignment/${created.id}`, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? 'The server rejected this assignment.' : 'Could not reach the server.');
+      const body = err instanceof ApiError ? (err.body as Record<string, unknown> | null) : null;
+      const attachmentError = Array.isArray(body?.attachment) ? String(body.attachment[0]) : null;
+      if (attachmentError) setFileError(attachmentError);
+      setError(
+        attachmentError
+          ? 'The assignment was not set. Fix the attachment and try again.'
+          : err instanceof ApiError
+            ? 'The server rejected this assignment.'
+            : 'Could not reach the server.',
+      );
       setBusy(false);
     }
+  }
+
+  function pickFile(picked: File | null) {
+    setFileError(picked ? attachmentProblem(picked) : null);
+    setFile(picked && !attachmentProblem(picked) ? picked : null);
   }
 
   return (
@@ -72,6 +94,51 @@ export default function NewAssignment() {
             id="title" className="input" value={title} autoFocus
             onChange={(e) => setTitle(e.target.value)}
           />
+        </div>
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          <label className="field-label" htmlFor="description">Instructions (optional)</label>
+          <textarea
+            id="description" className="input" rows={6} maxLength={10000} value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            style={{ resize: 'vertical', lineHeight: 1.55 }}
+          />
+          <p style={{ margin: 0, color: 'var(--bone-55)', fontSize: 13 }}>
+            Students see this above where they hand in. Line breaks are kept and links become clickable.
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          <label className="field-label" htmlFor="attachment">Attachment (optional)</label>
+          {file ? (
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                border: '1px solid var(--bone-18)', borderRadius: 'var(--radius-input)',
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {file.name}
+              </span>
+              <span style={{ color: 'var(--bone-55)', fontSize: 13, fontFamily: 'var(--font-mono)' }}>{fileSize(file.size)}</span>
+              <button
+                type="button" onClick={() => pickFile(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--bone-66)', cursor: 'pointer', fontSize: 14, padding: 0 }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <input
+              id="attachment" type="file" accept={ATTACHMENT_ACCEPT}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+              style={{ color: 'var(--bone-66)' }}
+            />
+          )}
+          {fileError && <span className="error">{fileError}</span>}
+          <p style={{ margin: 0, color: 'var(--bone-55)', fontSize: 13 }}>
+            A PDF, JPG or PNG up to 10 MB: the question sheet, notes or a photo of the board. Only this class can open it.
+          </p>
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>

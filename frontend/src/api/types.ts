@@ -25,9 +25,15 @@ export interface Assignment {
   id: number;
   course: number;
   title: string;
+  description: string;        /* plain text; keep its line breaks */
   due_at: string | null;      /* ISO 8601; send an explicit +05:30 offset */
   max_score: number;
   similarity_threshold: number;
+  /* The teacher's handout. Never a URL: the file comes from
+     GET /api/assignments/{id}/attachment/ with the token. */
+  has_attachment: boolean;
+  attachment_name: string | null;
+  attachment_type: 'pdf' | 'image' | null;
 }
 
 export interface Submission {

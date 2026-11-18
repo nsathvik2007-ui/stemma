@@ -22,7 +22,38 @@ export const teacherApi = {
     api.post<IssuedAccount>(`/courses/${courseId}/students/${studentId}/reset-password/`),
 
   assignments: () => api.get<Assignment[]>('/assignments/'),
-  createAssignment: (body: Partial<Assignment>) => api.post<Assignment>('/assignments/', body),
+  /* Multipart, so an attachment can ride along. An empty deadline is left
+     out rather than sent as "". */
+  createAssignment: (
+    fields: {
+      course: number; title: string; description: string; due_at: string | null;
+      max_score: number; similarity_threshold: number;
+    },
+    file: File | null,
+  ) => {
+    const form = new FormData();
+    form.append('course', String(fields.course));
+    form.append('title', fields.title);
+    form.append('description', fields.description);
+    if (fields.due_at) form.append('due_at', fields.due_at);
+    form.append('max_score', String(fields.max_score));
+    form.append('similarity_threshold', String(fields.similarity_threshold));
+    if (file) form.append('attachment', file);
+    return api.post<Assignment>('/assignments/', form);
+  },
+  /* Edit the brief: new description, a replacement file, or no file. The
+     server deletes a replaced or removed file. */
+  updateBrief: (
+    assignmentId: number,
+    change: { description: string; file: File | null; removeAttachment: boolean },
+  ) => {
+    const form = new FormData();
+    form.append('description', change.description);
+    if (change.file) form.append('attachment', change.file);
+    else if (change.removeAttachment) form.append('remove_attachment', 'true');
+    return api.patch<Assignment>(`/assignments/${assignmentId}/`, form);
+  },
+  attachment: (assignmentId: number) => api.blob(`/assignments/${assignmentId}/attachment/`),
 
   /* Stage 1 + 2: candidate self-join then Jaccard. Synchronous by design. */
   analyze: (assignmentId: number) =>
